@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neural Data Switcher Visualizer</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: #030712;
+      color: #f3f4f6;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+    #canvas-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+    canvas {
+      display: block;
+    }
+    .hud-overlay {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      pointer-events: none;
+      font-family: monospace;
+    }
+    .hud-overlay h1 {
+      font-size: 1.2rem;
+      letter-spacing: 2px;
+      color: #38bdf8;
+      text-transform: uppercase;
+      text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+    }
+    .hud-stats {
+      margin-top: 8px;
+      font-size: 0.85rem;
+      color: #9ca3af;
+      line-height: 1.5;
+    }
+    .hud-stats span {
+      color: #22c55e;
+      font-weight: bold;
+    }
+    .controls {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      background: rgba(15, 23, 42, 0.8);
+      padding: 12px 24px;
+      border-radius: 9999px;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      backdrop-filter: blur(8px);
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    input[type="range"] {
+      accent-color: #38bdf8;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="hud-overlay">
+    <h1>NEURAL_ROUTER // V4.0</h1>
+    <div class="hud-stats">
+      STATUS: <span>ACTIVE</span><br />
+      SWITCH_FREQ: <span id="freq-val">120 Hz</span><br />
+      PACKET_FLUX: <span id="flux-val">0 GB/s</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="control-group">
+      <label for="speed">SPEED:</label>
+      <input type="range" id="speed" min="1" max="10" value="5" />
+    </div>
+    <div class="control-group">
+      <label for="density">BUS DENSITY:</label>
+      <input type="range" id="density" min="4" max="16" value="8" />
+    </div>
+  </div>
+
+  <div id="canvas-container">
+    <canvas id="neuralCanvas"></canvas>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('neuralCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    const freqVal = document.getElementById('freq-val');
+    const fluxVal = document.getElementById('flux-val');
+    const speedInput = document.getElementById('speed');
+    const densityInput = document.getElementById('density');
+
+    let width, height;
+    let columns = [];
+    let packets = [];
+    let connections = [];
+
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+      initGrid();
+    }
+
+    class Column {
+      constructor(x, id) {
+        this.x = x;
+        this.id = id;
+        this.nodes = [];
+        this.nodeCount = 8;
+        this.initNodes();
+      }
+
+      initNodes() {
+        this.nodes = [];
+        const padding = 80;
+        const availableHeight = height - padding * 2;
+        const step = availableHeight / (this.nodeCount - 1);
+        for (let i = 0; i < this.nodeCount; i++) {
+          this.nodes.push({
+            x: this.x,
+            y: padding + i * step,
+            active: Math.random() > 0.5,
+            energy: Math.random()
+          });
+        }
+      }
+
+      draw() {
+        // Vertical track beam
+        ctx.beginPath();
+        ctx.moveTo(this.x, 0);
+        ctx.lineTo(this.x, height);
+        ctx.strokeStyle = 'rgba(30, 41, 59, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Render nodes
+        this.nodes.forEach(node => {
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, 4, 0, Math.PI * 2);
+          ctx.fillStyle = node.energy > 0.6 ? '#38bdf8' : '#334155';
+          ctx.shadowBlur = node.energy > 0.6 ? 12 : 0;
+          ctx.shadowColor = '#38bdf8';
+          ctx.fill();
+          ctx.shadowBlur = 0; // reset
+        });
+      }
+    }
+
+    class Packet {
+      constructor(startNode, endNode, speedMult) {
+        this.startX = startNode.x;
+        this.startY = startNode.y;
+        this.endX = endNode.x;
+        this.endY = endNode.y;
+        
+        this.x = this.startX;
+        this.y = this.startY;
+        
+        this.progress = 0;
+        // Direction determined by moving up or down relative to layers
+        this.isUpward = this.endY < this.startY;
+        
+        this.speed = (0.015 + Math.random() * 0.02) * speedMult;
+        this.length = 15 + Math.random() * 25;
+        this.color = this.isUpward ? '#a855f7' : '#38bdf8'; // Purple for UP, Cyan for DOWN
+      }
+
+      update() {
+        this.progress += this.speed;
+        this.x = this.startX + (this.endX - this.startX) * this.progress;
+        this.y = this.startY + (this.end
+    
