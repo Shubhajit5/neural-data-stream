@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Neural Bar-Switching Matrix</title>
+  <title>Smooth Neural Bus Switcher</title>
   <style>
     * {
       box-sizing: border-box;
@@ -11,9 +11,9 @@
       padding: 0;
     }
     body {
-      background-color: #050811;
+      background-color: #030712;
       color: #00f0ff;
-      font-family: 'Courier New', Courier, monospace;
+      font-family: monospace;
       overflow: hidden;
       height: 100vh;
       width: 100vw;
@@ -31,29 +31,30 @@
       left: 20px;
       z-index: 10;
       pointer-events: none;
-      background: rgba(5, 8, 17, 0.7);
-      padding: 15px 20px;
-      border-left: 3px solid #00f0ff;
-      backdrop-filter: blur(4px);
+      background: rgba(15, 23, 42, 0.7);
+      padding: 16px 20px;
+      border-left: 3px solid #38bdf8;
+      backdrop-filter: blur(8px);
+      border-radius: 0 8px 8px 0;
     }
     .hud h1 {
-      font-size: 1rem;
+      font-size: 0.95rem;
       letter-spacing: 2px;
-      color: #00f0ff;
+      color: #38bdf8;
       text-transform: uppercase;
       margin-bottom: 6px;
     }
     .hud-text {
-      font-size: 0.75rem;
-      color: #8a99ad;
-      line-height: 1.6;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      line-height: 1.5;
     }
     .hud-text span {
-      color: #ff0055;
+      color: #a855f7;
       font-weight: bold;
     }
-    .hud-text span.green {
-      color: #00ff66;
+    .hud-text span.cyan {
+      color: #38bdf8;
     }
     .controls {
       position: absolute;
@@ -61,247 +62,256 @@
       left: 50%;
       transform: translateX(-50%);
       z-index: 10;
-      background: rgba(10, 15, 30, 0.85);
+      background: rgba(15, 23, 42, 0.85);
       padding: 10px 24px;
       border-radius: 30px;
-      border: 1px solid rgba(0, 240, 255, 0.3);
+      border: 1px solid rgba(56, 189, 248, 0.3);
       display: flex;
       gap: 20px;
       align-items: center;
       font-size: 0.8rem;
+      backdrop-filter: blur(8px);
     }
     .controls label {
-      color: #8a99ad;
+      color: #94a3b8;
     }
     input[type="range"] {
-      accent-color: #00f0ff;
+      accent-color: #38bdf8;
       cursor: pointer;
     }
   </style>
 </head>
 <body>
   <div class="hud">
-    <h1>BAR_BUS_SWITCHING // LIVE</h1>
+    <h1>SMOOTH_BUS_ROUTER // V5.0</h1>
     <div class="hud-text">
-      BUS_STATUS: <span class="green">OVERCLOCKED</span><br />
-      UP_SWITCHES: <span id="up-cnt">0</span>/s<br />
-      DOWN_SWITCHES: <span id="down-cnt">0</span>/s<br />
-      ACTIVE_CONNECTIONS: <span id="conn-cnt">0</span>
+      BUS_DYNAMICS: <span class="cyan">CONTINUOUS_GLIDE</span><br />
+      ACTIVE_BUSES: <span id="bus-cnt">0</span><br />
+      MORPH_RATE: <span id="morph-rate">0.05</span>
     </div>
   </div>
 
   <div class="controls">
     <div>
-      <label for="speed">SWITCH RATE:</label>
-      <input type="range" id="speed" min="1" max="10" value="6" />
+      <label for="slideSpeed">SWITCH SPEED:</label>
+      <input type="range" id="slideSpeed" min="1" max="10" value="5" />
     </div>
     <div>
-      <label for="barCount">BAR COLUMNS:</label>
-      <input type="range" id="barCount" min="6" max="24" value="12" />
+      <label for="colCount">BAR COLUMNS:</label>
+      <input type="range" id="colCount" min="4" max="16" value="8" />
     </div>
   </div>
 
-  <canvas id="matrixCanvas"></canvas>
+  <canvas id="neuralCanvas"></canvas>
 
   <script>
-    const canvas = document.getElementById('matrixCanvas');
+    const canvas = document.getElementById('neuralCanvas');
     const ctx = canvas.getContext('2d');
 
-    const upCntEl = document.getElementById('up-cnt');
-    const downCntEl = document.getElementById('down-cnt');
-    const connCntEl = document.getElementById('conn-cnt');
-    const speedInput = document.getElementById('speed');
-    const barCountInput = document.getElementById('barCount');
+    const busCntEl = document.getElementById('bus-cnt');
+    const slideSpeedInput = document.getElementById('slideSpeed');
+    const colCountInput = document.getElementById('colCount');
 
     let width, height;
     let columns = [];
-    let activeSwitches = [];
-    let upSwitchStats = 0;
-    let downSwitchStats = 0;
+    let buses = [];
+
+    // Helper: Linear Interpolation for smooth motion
+    function lerp(start, end, amt) {
+      return (1 - amt) * start + amt * end;
+    }
 
     function resize() {
       width = canvas.width = window.innerWidth;
       height = canvas.height = window.innerHeight;
-      initColumns();
+      initGraph();
     }
 
     class BarColumn {
-      constructor(x, colIndex) {
+      constructor(x, id) {
         this.x = x;
-        this.colIndex = colIndex;
-        this.segmentCount = 18;
-        this.segments = [];
-        this.barWidth = 14;
-        this.initSegments();
-      }
-
-      initSegments() {
-        this.segments = [];
-        const padding = 60;
-        const totalH = height - padding * 2;
-        const segH = totalH / this.segmentCount;
-
-        for (let i = 0; i < this.segmentCount; i++) {
-          this.segments.push({
-            y: padding + i * segH,
-            height: segH - 6,
-            active: Math.random() > 0.4,
-            intensity: Math.random(),
-            pulseSpeed: 0.02 + Math.random() * 0.05
-          });
-        }
+        this.id = id;
+        this.width = 10;
       }
 
       draw() {
-        this.segments.forEach((seg, idx) => {
-          // Animate segment pulse
-          seg.intensity += seg.pulseSpeed;
-          if (seg.intensity > 1 || seg.intensity < 0.2) seg.pulseSpeed *= -1;
+        // Vertical track core
+        ctx.fillStyle = 'rgba(30, 41, 59, 0.8)';
+        ctx.fillRect(this.x - this.width / 2, 40, this.width, height - 80);
 
-          ctx.fillStyle = seg.active 
-            ? `rgba(0, 240, 255, ${0.3 + seg.intensity * 0.7})` 
-            : 'rgba(15, 23, 42, 0.6)';
-          
-          if (seg.active) {
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = '#00f0ff';
+        // Subtle glowing side rails
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(this.x - this.width / 2, 40, this.width, height - 80);
+      }
+    }
+
+    class SmoothConnectionBus {
+      constructor(colA, colB) {
+        this.colA = colA;
+        this.colB = colB;
+
+        const margin = 80;
+        const availableH = height - margin * 2;
+
+        // Start & Current Y positions
+        this.yA = margin + Math.random() * availableH;
+        this.yB = margin + Math.random() * availableH;
+
+        // Target Y positions (where connections smoothly slide towards)
+        this.targetYA = this.yA;
+        this.targetYB = this.yB;
+
+        this.packets = [];
+        this.switchTimer = 0;
+        this.switchInterval = 80 + Math.random() * 100;
+      }
+
+      update() {
+        const speedMult = parseFloat(slideSpeedInput.value) * 0.005;
+
+        // Smoothly glide Y endpoints towards target heights (Smooth Switching)
+        this.yA = lerp(this.yA, this.targetYA, speedMult);
+        this.yB = lerp(this.yB, this.targetYB, speedMult);
+
+        // Trigger new target connection height periodically
+        this.switchTimer++;
+        if (this.switchTimer > this.switchInterval) {
+          const margin = 80;
+          const availableH = height - margin * 2;
+
+          // Pick a new target height along the vertical bars (UP or DOWN)
+          if (Math.random() > 0.5) {
+            this.targetYA = margin + Math.random() * availableH;
           } else {
-            ctx.shadowBlur = 0;
+            this.targetYB = margin + Math.random() * availableH;
           }
 
-          // Draw individual bar segment
-          ctx.fillRect(this.x - this.barWidth / 2, seg.y, this.barWidth, seg.height);
+          this.switchTimer = 0;
+          this.switchInterval = 60 + Math.random() * 120;
+        }
+
+        // Spawn smooth data packets flowing along the dynamic curve
+        if (Math.random() < 0.1) {
+          this.packets.push({
+            t: 0,
+            speed: 0.01 + Math.random() * 0.02,
+            dir: Math.random() > 0.5 ? 1 : -1 // UP/DOWN or Left/Right flow
+          });
+        }
+
+        // Update packet positions
+        for (let i = this.packets.length - 1; i >= 0; i--) {
+          let p = this.packets[i];
+          p.t += p.speed;
+          if (p.t >= 1) {
+            this.packets.splice(i, 1);
+          }
+        }
+      }
+
+      getBezierPoint(t) {
+        // Compute position along a smooth S-curve between bar endpoints
+        const p0 = { x: this.colA.x, y: this.yA };
+        const p3 = { x: this.colB.x, y: this.yB };
+        
+        const midX = (p0.x + p3.x) / 2;
+        const p1 = { x: midX, y: p0.y };
+        const p2 = { x: midX, y: p3.y };
+
+        const cx = 3 * (p1.x - p0.x);
+        const bx = 3 * (p2.x - p1.x) - cx;
+        const ax = p3.x - p0.x - cx - bx;
+
+        const cy = 3 * (p1.y - p0.y);
+        const by = 3 * (p2.y - p1.y) - cy;
+        const ay = p3.y - p0.y - cy - by;
+
+        const xt = ax * Math.pow(t, 3) + bx * Math.pow(t, 2) + cx * t + p0.x;
+        const yt = ay * Math.pow(t, 3) + by * Math.pow(t, 2) + cy * t + p0.y;
+
+        return { x: xt, y: yt };
+      }
+
+      draw() {
+        const midX = (this.colA.x + this.colB.x) / 2;
+        
+        // Color shifts depending on whether the connection is currently angled UP or DOWN
+        const isUpward = this.yB < this.yA;
+        const busColor = isUpward ? 'rgba(168, 85, 247, ' : 'rgba(56, 189, 248, ';
+
+        // Draw curved connection bridge
+        ctx.beginPath();
+        ctx.moveTo(this.colA.x, this.yA);
+        ctx.bezierCurveTo(midX, this.yA, midX, this.yB, this.colB.x, this.yB);
+        ctx.strokeStyle = busColor + '0.4)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Draw anchor nodes on vertical bars
+        ctx.fillStyle = busColor + '1)';
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = busColor + '1)';
+        
+        ctx.beginPath();
+        ctx.arc(this.colA.x, this.yA, 4, 0, Math.PI * 2);
+        ctx.arc(this.colB.x, this.yB, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Draw smooth data packet pulses traveling along the curve
+        this.packets.forEach(p => {
+          const pos = this.getBezierPoint(p.dir === 1 ? p.t : 1 - p.t);
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = busColor + '1)';
+          ctx.fill();
           ctx.shadowBlur = 0;
         });
       }
     }
 
-    class ConnectionSwitch {
-      constructor(startCol, startSegIdx, endCol, endSegIdx, speedMult) {
-        this.startSeg = startCol.segments[startSegIdx];
-        this.endSeg = endCol.segments[endSegIdx];
-        
-        this.startX = startCol.x;
-        this.startY = this.startSeg.y + this.startSeg.height / 2;
-        this.endX = endCol.x;
-        this.endY = this.endSeg.y + this.endSeg.height / 2;
-
-        this.progress = 0;
-        this.speed = (0.02 + Math.random() * 0.03) * speedMult;
-        
-        // Is connection switching UP or DOWN?
-        this.isUp = this.endY < this.startY;
-        this.color = this.isUp ? '#ff0055' : '#00ff66'; // Red for UP, Green for DOWN
-
-        if (this.isUp) upSwitchStats++;
-        else downSwitchStats++;
-      }
-
-      update() {
-        this.progress += this.speed;
-      }
-
-      draw() {
-        const curX = this.startX + (this.endX - this.startX) * this.progress;
-        const curY = this.startY + (this.endY - this.startY) * this.progress;
-
-        // Draw switching connection laser/bus line
-        ctx.beginPath();
-        ctx.moveTo(this.startX, this.startY);
-        ctx.lineTo(curX, curY);
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = 2.5;
-        ctx.shadowBlur = 12;
-        ctx.shadowColor = this.color;
-        ctx.stroke();
-
-        // Glowing packet tip
-        ctx.beginPath();
-        ctx.arc(curX, curY, 4, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      }
-    }
-
-    function initColumns() {
+    function initGraph() {
       columns = [];
-      activeSwitches = [];
-      const count = parseInt(barCountInput.value);
-      const spacing = width / (count + 1);
+      buses = [];
+      const numCols = parseInt(colCountInput.value);
+      const spacing = width / (numCols + 1);
 
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < numCols; i++) {
         columns.push(new BarColumn(spacing * (i + 1), i));
       }
-    }
 
-    function triggerBarSwitches() {
-      const speedMult = parseFloat(speedInput.value);
-      if (columns.length < 2) return;
-
-      // Randomly switch connections between adjacent bar columns
+      // Create continuous connection buses between adjacent vertical bar columns
       for (let i = 0; i < columns.length - 1; i++) {
-        if (Math.random() < 0.35) {
-          const colA = columns[i];
-          const colB = columns[i + 1];
-
-          const segAIdx = Math.floor(Math.random() * colA.segmentCount);
-          let segBIdx = Math.floor(Math.random() * colB.segmentCount);
-
-          // Ensure diagonal up/down switching connection
-          while (segBIdx === segAIdx) {
-            segBIdx = Math.floor(Math.random() * colB.segmentCount);
-          }
-
-          if (Math.random() > 0.5) {
-            activeSwitches.push(new ConnectionSwitch(colA, segAIdx, colB, segBIdx, speedMult));
-          } else {
-            activeSwitches.push(new ConnectionSwitch(colB, segBIdx, colA, segAIdx, speedMult));
-          }
-        }
+        // Multiple connections per adjacent bar layer for complex switching
+        buses.push(new SmoothConnectionBus(columns[i], columns[i + 1]));
+        buses.push(new SmoothConnectionBus(columns[i], columns[i + 1]));
       }
     }
 
     function animate() {
-      // Trail effect
-      ctx.fillStyle = 'rgba(5, 8, 17, 0.3)';
+      ctx.fillStyle = 'rgba(3, 7, 18, 0.25)';
       ctx.fillRect(0, 0, width, height);
 
-      // Render vertical bar columns
+      // Render vertical bars
       columns.forEach(col => col.draw());
 
-      // Update and draw switching connections
-      for (let i = activeSwitches.length - 1; i >= 0; i--) {
-        const sw = activeSwitches[i];
-        sw.update();
-        sw.draw();
+      // Update and render smooth connection buses
+      buses.forEach(bus => {
+        bus.update();
+        bus.draw();
+      });
 
-        if (sw.progress >= 1) {
-          // Flash target bar segment on hit
-          sw.endSeg.intensity = 1.0;
-          activeSwitches.splice(i, 1);
-        }
-      }
-
-      triggerBarSwitches();
-
-      // Update HUD counter stats
-      connCntEl.innerText = activeSwitches.length;
-      upCntEl.innerText = upSwitchStats;
-      downCntEl.innerText = downSwitchStats;
+      busCntEl.innerText = buses.length;
 
       requestAnimationFrame(animate);
     }
 
-    // Reset stats periodically
-    setInterval(() => {
-      upSwitchStats = Math.floor(upSwitchStats * 0.3);
-      downSwitchStats = Math.floor(downSwitchStats * 0.3);
-    }, 1000);
-
-    // Controls listeners
+    // Listeners
     window.addEventListener('resize', resize);
-    barCountInput.addEventListener('input', initColumns);
+    colCountInput.addEventListener('input', initGraph);
 
     resize();
     animate();
