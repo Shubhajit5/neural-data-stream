@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Neural Data Switcher Visualizer</title>
+  <title>Neural Bar-Switching Matrix</title>
   <style>
     * {
       box-sizing: border-box;
@@ -11,189 +11,300 @@
       padding: 0;
     }
     body {
-      background-color: #030712;
-      color: #f3f4f6;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #050811;
+      color: #00f0ff;
+      font-family: 'Courier New', Courier, monospace;
       overflow: hidden;
       height: 100vh;
       width: 100vw;
     }
-    #canvas-container {
+    canvas {
+      display: block;
       position: absolute;
       top: 0;
       left: 0;
-      width: 100%;
-      height: 100%;
       z-index: 1;
     }
-    canvas {
-      display: block;
-    }
-    .hud-overlay {
+    .hud {
       position: absolute;
       top: 20px;
       left: 20px;
       z-index: 10;
       pointer-events: none;
-      font-family: monospace;
+      background: rgba(5, 8, 17, 0.7);
+      padding: 15px 20px;
+      border-left: 3px solid #00f0ff;
+      backdrop-filter: blur(4px);
     }
-    .hud-overlay h1 {
-      font-size: 1.2rem;
+    .hud h1 {
+      font-size: 1rem;
       letter-spacing: 2px;
-      color: #38bdf8;
+      color: #00f0ff;
       text-transform: uppercase;
-      text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+      margin-bottom: 6px;
     }
-    .hud-stats {
-      margin-top: 8px;
-      font-size: 0.85rem;
-      color: #9ca3af;
-      line-height: 1.5;
+    .hud-text {
+      font-size: 0.75rem;
+      color: #8a99ad;
+      line-height: 1.6;
     }
-    .hud-stats span {
-      color: #22c55e;
+    .hud-text span {
+      color: #ff0055;
       font-weight: bold;
+    }
+    .hud-text span.green {
+      color: #00ff66;
     }
     .controls {
       position: absolute;
-      bottom: 20px;
+      bottom: 25px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 10;
-      background: rgba(15, 23, 42, 0.8);
-      padding: 12px 24px;
-      border-radius: 9999px;
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      backdrop-filter: blur(8px);
+      background: rgba(10, 15, 30, 0.85);
+      padding: 10px 24px;
+      border-radius: 30px;
+      border: 1px solid rgba(0, 240, 255, 0.3);
       display: flex;
       gap: 20px;
       align-items: center;
-      font-family: monospace;
-      font-size: 0.85rem;
+      font-size: 0.8rem;
     }
-    .control-group {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .controls label {
+      color: #8a99ad;
     }
     input[type="range"] {
-      accent-color: #38bdf8;
+      accent-color: #00f0ff;
       cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <div class="hud-overlay">
-    <h1>NEURAL_ROUTER // V4.0</h1>
-    <div class="hud-stats">
-      STATUS: <span>ACTIVE</span><br />
-      SWITCH_FREQ: <span id="freq-val">120 Hz</span><br />
-      PACKET_FLUX: <span id="flux-val">0 GB/s</span>
+  <div class="hud">
+    <h1>BAR_BUS_SWITCHING // LIVE</h1>
+    <div class="hud-text">
+      BUS_STATUS: <span class="green">OVERCLOCKED</span><br />
+      UP_SWITCHES: <span id="up-cnt">0</span>/s<br />
+      DOWN_SWITCHES: <span id="down-cnt">0</span>/s<br />
+      ACTIVE_CONNECTIONS: <span id="conn-cnt">0</span>
     </div>
   </div>
 
   <div class="controls">
-    <div class="control-group">
-      <label for="speed">SPEED:</label>
-      <input type="range" id="speed" min="1" max="10" value="5" />
+    <div>
+      <label for="speed">SWITCH RATE:</label>
+      <input type="range" id="speed" min="1" max="10" value="6" />
     </div>
-    <div class="control-group">
-      <label for="density">BUS DENSITY:</label>
-      <input type="range" id="density" min="4" max="16" value="8" />
+    <div>
+      <label for="barCount">BAR COLUMNS:</label>
+      <input type="range" id="barCount" min="6" max="24" value="12" />
     </div>
   </div>
 
-  <div id="canvas-container">
-    <canvas id="neuralCanvas"></canvas>
-  </div>
+  <canvas id="matrixCanvas"></canvas>
 
   <script>
-    const canvas = document.getElementById('neuralCanvas');
+    const canvas = document.getElementById('matrixCanvas');
     const ctx = canvas.getContext('2d');
-    
-    const freqVal = document.getElementById('freq-val');
-    const fluxVal = document.getElementById('flux-val');
+
+    const upCntEl = document.getElementById('up-cnt');
+    const downCntEl = document.getElementById('down-cnt');
+    const connCntEl = document.getElementById('conn-cnt');
     const speedInput = document.getElementById('speed');
-    const densityInput = document.getElementById('density');
+    const barCountInput = document.getElementById('barCount');
 
     let width, height;
     let columns = [];
-    let packets = [];
-    let connections = [];
+    let activeSwitches = [];
+    let upSwitchStats = 0;
+    let downSwitchStats = 0;
 
     function resize() {
       width = canvas.width = window.innerWidth;
       height = canvas.height = window.innerHeight;
-      initGrid();
+      initColumns();
     }
 
-    class Column {
-      constructor(x, id) {
+    class BarColumn {
+      constructor(x, colIndex) {
         this.x = x;
-        this.id = id;
-        this.nodes = [];
-        this.nodeCount = 8;
-        this.initNodes();
+        this.colIndex = colIndex;
+        this.segmentCount = 18;
+        this.segments = [];
+        this.barWidth = 14;
+        this.initSegments();
       }
 
-      initNodes() {
-        this.nodes = [];
-        const padding = 80;
-        const availableHeight = height - padding * 2;
-        const step = availableHeight / (this.nodeCount - 1);
-        for (let i = 0; i < this.nodeCount; i++) {
-          this.nodes.push({
-            x: this.x,
-            y: padding + i * step,
-            active: Math.random() > 0.5,
-            energy: Math.random()
+      initSegments() {
+        this.segments = [];
+        const padding = 60;
+        const totalH = height - padding * 2;
+        const segH = totalH / this.segmentCount;
+
+        for (let i = 0; i < this.segmentCount; i++) {
+          this.segments.push({
+            y: padding + i * segH,
+            height: segH - 6,
+            active: Math.random() > 0.4,
+            intensity: Math.random(),
+            pulseSpeed: 0.02 + Math.random() * 0.05
           });
         }
       }
 
       draw() {
-        // Vertical track beam
-        ctx.beginPath();
-        ctx.moveTo(this.x, 0);
-        ctx.lineTo(this.x, height);
-        ctx.strokeStyle = 'rgba(30, 41, 59, 0.5)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        this.segments.forEach((seg, idx) => {
+          // Animate segment pulse
+          seg.intensity += seg.pulseSpeed;
+          if (seg.intensity > 1 || seg.intensity < 0.2) seg.pulseSpeed *= -1;
 
-        // Render nodes
-        this.nodes.forEach(node => {
-          ctx.beginPath();
-          ctx.arc(node.x, node.y, 4, 0, Math.PI * 2);
-          ctx.fillStyle = node.energy > 0.6 ? '#38bdf8' : '#334155';
-          ctx.shadowBlur = node.energy > 0.6 ? 12 : 0;
-          ctx.shadowColor = '#38bdf8';
-          ctx.fill();
-          ctx.shadowBlur = 0; // reset
+          ctx.fillStyle = seg.active 
+            ? `rgba(0, 240, 255, ${0.3 + seg.intensity * 0.7})` 
+            : 'rgba(15, 23, 42, 0.6)';
+          
+          if (seg.active) {
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#00f0ff';
+          } else {
+            ctx.shadowBlur = 0;
+          }
+
+          // Draw individual bar segment
+          ctx.fillRect(this.x - this.barWidth / 2, seg.y, this.barWidth, seg.height);
+          ctx.shadowBlur = 0;
         });
       }
     }
 
-    class Packet {
-      constructor(startNode, endNode, speedMult) {
-        this.startX = startNode.x;
-        this.startY = startNode.y;
-        this.endX = endNode.x;
-        this.endY = endNode.y;
+    class ConnectionSwitch {
+      constructor(startCol, startSegIdx, endCol, endSegIdx, speedMult) {
+        this.startSeg = startCol.segments[startSegIdx];
+        this.endSeg = endCol.segments[endSegIdx];
         
-        this.x = this.startX;
-        this.y = this.startY;
-        
+        this.startX = startCol.x;
+        this.startY = this.startSeg.y + this.startSeg.height / 2;
+        this.endX = endCol.x;
+        this.endY = this.endSeg.y + this.endSeg.height / 2;
+
         this.progress = 0;
-        // Direction determined by moving up or down relative to layers
-        this.isUpward = this.endY < this.startY;
+        this.speed = (0.02 + Math.random() * 0.03) * speedMult;
         
-        this.speed = (0.015 + Math.random() * 0.02) * speedMult;
-        this.length = 15 + Math.random() * 25;
-        this.color = this.isUpward ? '#a855f7' : '#38bdf8'; // Purple for UP, Cyan for DOWN
+        // Is connection switching UP or DOWN?
+        this.isUp = this.endY < this.startY;
+        this.color = this.isUp ? '#ff0055' : '#00ff66'; // Red for UP, Green for DOWN
+
+        if (this.isUp) upSwitchStats++;
+        else downSwitchStats++;
       }
 
       update() {
         this.progress += this.speed;
-        this.x = this.startX + (this.endX - this.startX) * this.progress;
-        this.y = this.startY + (this.end
-    
+      }
+
+      draw() {
+        const curX = this.startX + (this.endX - this.startX) * this.progress;
+        const curY = this.startY + (this.endY - this.startY) * this.progress;
+
+        // Draw switching connection laser/bus line
+        ctx.beginPath();
+        ctx.moveTo(this.startX, this.startY);
+        ctx.lineTo(curX, curY);
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 2.5;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = this.color;
+        ctx.stroke();
+
+        // Glowing packet tip
+        ctx.beginPath();
+        ctx.arc(curX, curY, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    function initColumns() {
+      columns = [];
+      activeSwitches = [];
+      const count = parseInt(barCountInput.value);
+      const spacing = width / (count + 1);
+
+      for (let i = 0; i < count; i++) {
+        columns.push(new BarColumn(spacing * (i + 1), i));
+      }
+    }
+
+    function triggerBarSwitches() {
+      const speedMult = parseFloat(speedInput.value);
+      if (columns.length < 2) return;
+
+      // Randomly switch connections between adjacent bar columns
+      for (let i = 0; i < columns.length - 1; i++) {
+        if (Math.random() < 0.35) {
+          const colA = columns[i];
+          const colB = columns[i + 1];
+
+          const segAIdx = Math.floor(Math.random() * colA.segmentCount);
+          let segBIdx = Math.floor(Math.random() * colB.segmentCount);
+
+          // Ensure diagonal up/down switching connection
+          while (segBIdx === segAIdx) {
+            segBIdx = Math.floor(Math.random() * colB.segmentCount);
+          }
+
+          if (Math.random() > 0.5) {
+            activeSwitches.push(new ConnectionSwitch(colA, segAIdx, colB, segBIdx, speedMult));
+          } else {
+            activeSwitches.push(new ConnectionSwitch(colB, segBIdx, colA, segAIdx, speedMult));
+          }
+        }
+      }
+    }
+
+    function animate() {
+      // Trail effect
+      ctx.fillStyle = 'rgba(5, 8, 17, 0.3)';
+      ctx.fillRect(0, 0, width, height);
+
+      // Render vertical bar columns
+      columns.forEach(col => col.draw());
+
+      // Update and draw switching connections
+      for (let i = activeSwitches.length - 1; i >= 0; i--) {
+        const sw = activeSwitches[i];
+        sw.update();
+        sw.draw();
+
+        if (sw.progress >= 1) {
+          // Flash target bar segment on hit
+          sw.endSeg.intensity = 1.0;
+          activeSwitches.splice(i, 1);
+        }
+      }
+
+      triggerBarSwitches();
+
+      // Update HUD counter stats
+      connCntEl.innerText = activeSwitches.length;
+      upCntEl.innerText = upSwitchStats;
+      downCntEl.innerText = downSwitchStats;
+
+      requestAnimationFrame(animate);
+    }
+
+    // Reset stats periodically
+    setInterval(() => {
+      upSwitchStats = Math.floor(upSwitchStats * 0.3);
+      downSwitchStats = Math.floor(downSwitchStats * 0.3);
+    }, 1000);
+
+    // Controls listeners
+    window.addEventListener('resize', resize);
+    barCountInput.addEventListener('input', initColumns);
+
+    resize();
+    animate();
+  </script>
+</body>
+</html>
